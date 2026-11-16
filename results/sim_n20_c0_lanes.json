@@ -1,0 +1,91 @@
+{
+  "scan": "data/sim_n20_c0.npy",
+  "points_total": 2229960,
+  "points_roi": 1412130,
+  "points_ground": 1351284,
+  "ground_plane": {
+    "normal": [
+      -0.0003,
+      0.0001,
+      1.0
+    ],
+    "d": 1.729
+  },
+  "candidates": 30429,
+  "marking_segments": 10,
+  "lanes": [
+    {
+      "coef": [
+        2.4756258403545068e-06,
+        -6.217594412539842e-05,
+        -5.250149794632964
+      ],
+      "x_range": [
+        3.000941276550293,
+        39.97401809692383
+      ],
+      "lateral_offset_m": -5.250523991490183,
+      "n_points": 11867,
+      "n_segments": 1,
+      "paint_coverage": 1.0,
+      "type_guess": "solid",
+      "rms_residual_m": 0.04604603677475369
+    },
+    {
+      "coef": [
+        5.000251828723664e-06,
+        -0.00010695708180265707,
+        -1.7500817706264742
+      ],
+      "x_range": [
+        9.002318382263184,
+        38.98766326904297
+      ],
+      "lateral_offset_m": -1.7506513162616284,
+      "n_points": 3347,
+      "n_segments": 4,
+      "paint_coverage": 0.4,
+      "type_guess": "dashed",
+      "rms_residual_m": 0.043484949122119664
+    },
+    {
+      "coef": [
+        -4.464766241382379e-06,
+        8.187478160204698e-05,
+        1.7502981616263644
+      ],
+      "x_range": [
+        9.002318382263184,
+        38.95930099487305
+      ],
+      "lateral_offset_m": 1.7506704328182467,
+      "n_points": 3342,
+      "n_segments": 4,
+      "paint_coverage": 0.4,
+      "type_guess": "dashed",
+      "rms_residual_m": 0.043515469347865154
+    },
+    {
+      "coef": [
+        -4.129277397164234e-06,
+        0.00010432085735199085,
+        5.249933878655422
+      ],
+      "x_range": [
+        3.000941276550293,
+        39.97401809692383
+      ],
+      "lateral_offset_m": 5.250564159489225,
+      "n_points": 11873,
+      "n_segments": 1,
+      "paint_coverage": 1.0,
+      "type_guess": "solid",
+      "rms_residual_m": 0.046043373546287715
+    }
+  ],
+  "adjacent_line_spacing_m": [
+    3.5,
+    3.5,
+    3.5
+  ]
+}

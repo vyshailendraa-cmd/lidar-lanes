@@ -1,0 +1,53 @@
+{
+  "scan": "data/sim_n1_c0.002.npy",
+  "points_total": 111500,
+  "points_roi": 32789,
+  "points_ground": 30871,
+  "ground_plane": {
+    "normal": [
+      -0.0008,
+      0.0004,
+      1.0
+    ],
+    "d": 1.73
+  },
+  "candidates": 440,
+  "marking_segments": 4,
+  "lanes": [
+    {
+      "coef": [
+        0.03283349100488187,
+        -5.360299614541237
+      ],
+      "x_range": [
+        3.01568341255188,
+        15.532065391540527
+      ],
+      "lateral_offset_m": -5.0319647044924185,
+      "n_points": 179,
+      "n_segments": 1,
+      "paint_coverage": 0.85,
+      "type_guess": "solid",
+      "rms_residual_m": 0.04781230661154441
+    },
+    {
+      "coef": [
+        0.032489348243765315,
+        5.140524820245719
+      ],
+      "x_range": [
+        3.01568341255188,
+        15.222539901733398
+      ],
+      "lateral_offset_m": 5.465418302683372,
+      "n_points": 173,
+      "n_segments": 1,
+      "paint_coverage": 0.84,
+      "type_guess": "solid",
+      "rms_residual_m": 0.04679246297107446
+    }
+  ],
+  "adjacent_line_spacing_m": [
+    10.5
+  ]
+}

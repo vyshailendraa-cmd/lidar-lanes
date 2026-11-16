@@ -1,0 +1,110 @@
+{
+  "scan": "data/drive0001.npy",
+  "points_total": 4510440,
+  "points_roi": 1902702,
+  "points_ground": 1646411,
+  "ground_plane": {
+    "normal": [
+      -0.011,
+      0.0174,
+      0.9998
+    ],
+    "d": 1.703
+  },
+  "candidates": 6460,
+  "marking_segments": 37,
+  "lines_rejected_by_quality_filter": 5,
+  "lanes": [
+    {
+      "coef": [
+        -0.0013725592703330938,
+        0.015951714769112633,
+        1.2258538439559536
+      ],
+      "x_range": [
+        7.6260294914245605,
+        58.799041748046875
+      ],
+      "lateral_offset_m": 1.2481150646137706,
+      "n_points": 186,
+      "n_segments": 10,
+      "paint_coverage": 0.41,
+      "type_guess": "dashed",
+      "rms_residual_m": 0.04833562681309913
+    },
+    {
+      "coef": [
+        -0.0012554071287697605,
+        0.007346789295391055,
+        4.347558791191204
+      ],
+      "x_range": [
+        0.1008724644780159,
+        57.162723541259766
+      ],
+      "lateral_offset_m": 4.295485971268139,
+      "n_points": 1324,
+      "n_segments": 1,
+      "paint_coverage": 0.99,
+      "type_guess": "solid",
+      "rms_residual_m": 0.08573049753018547
+    },
+    {
+      "coef": [
+        -0.001416222247951265,
+        0.018033036407232483,
+        7.240544131155162
+      ],
+      "x_range": [
+        15.198326110839844,
+        40.38276672363281
+      ],
+      "lateral_offset_m": 7.279252270432361,
+      "n_points": 28,
+      "n_segments": 4,
+      "paint_coverage": 0.31,
+      "type_guess": "dashed",
+      "rms_residual_m": 0.03358953358560559
+    },
+    {
+      "coef": [
+        -0.0012646964714959083,
+        0.0021042203673927264,
+        10.352376892004479
+      ],
+      "x_range": [
+        4.789530277252197,
+        20.9288330078125
+      ],
+      "lateral_offset_m": 10.246949448528815,
+      "n_points": 77,
+      "n_segments": 2,
+      "paint_coverage": 0.85,
+      "type_guess": "solid",
+      "rms_residual_m": 0.06694742855257506
+    },
+    {
+      "coef": [
+        0.0003314994969204298,
+        -0.13201635419689475,
+        13.342865107310018
+      ],
+      "x_range": [
+        36.80124282836914,
+        53.82612991333008
+      ],
+      "lateral_offset_m": 12.055851515033114,
+      "n_points": 90,
+      "n_segments": 3,
+      "paint_coverage": 0.49,
+      "type_guess": "dashed",
+      "rms_residual_m": 0.10226955904707692
+    }
+  ],
+  "adjacent_line_spacing_m": [
+    3.05,
+    2.98,
+    2.97,
+    1.81
+  ]
+}
