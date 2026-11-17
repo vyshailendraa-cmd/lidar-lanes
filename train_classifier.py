@@ -56,6 +56,18 @@ def distance_to_lanes(xy, lanes):
     return dist
 
 
+def distance_to_polylines(xy, lines):
+    """Distance from each point to the nearest hand-labelled polyline segment."""
+    dist = np.full(len(xy), np.inf)
+    for l in lines:
+        p = np.asarray(l, float)
+        for a, b in zip(p[:-1], p[1:]):
+            ab = b - a
+            t = np.clip(((xy - a) @ ab) / (ab @ ab + 1e-12), 0, 1)
+            dist = np.minimum(dist, np.linalg.norm(xy - (a + t[:, None] * ab), axis=1))
+    return dist
+
+
 # ---------- features ----------
 def features(ground, cmask, plane, seed=0):
     """Per-candidate features, each with a physical reason to separate paint from rails/clutter."""
@@ -95,14 +107,20 @@ def features(ground, cmask, plane, seed=0):
     return F
 
 
-def labelled(path, args):
+def labelled(path, args, gt=None):
+    """Labels come from the rules (weak), or from hand-drawn lines when gt is given (independent)."""
     pts = load_points(path)
     ground, cmask, lanes, plane = pipeline(pts, args.x_range, args.y_max, args.k_mad, args.max_rms, args.min_length)
     bright = ground[cmask]
-    dist = distance_to_lanes(bright[:, :2], lanes)
     y = np.full(len(bright), -1)
-    y[dist <= 0.12] = 1                                            # paint
-    y[dist > 0.40] = 0                                             # not paint
+    if gt is None:
+        dist = distance_to_lanes(bright[:, :2], lanes)
+        y[dist <= 0.12] = 1                                        # paint
+        y[dist > 0.40] = 0                                         # not paint
+    else:
+        dist = distance_to_polylines(bright[:, :2], gt)
+        y[dist <= 0.20] = 1                                        # hand clicks are less exact than fitted lines
+        y[dist > 0.50] = 0
     X = features(ground, cmask, plane)
     keep = y >= 0
     return X[keep], y[keep], bright[keep], len(lanes)
@@ -122,7 +140,7 @@ def evaluate(model, X, y, name):
     return m, p
 
 
-def plot(points, prob, out, title):
+def plot(points, prob, out, title, gt=None):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -130,6 +148,9 @@ def plot(points, prob, out, title):
     ax.set_facecolor("#0b1020")
     sc = ax.scatter(-points[:, 1], points[:, 0], c=prob, cmap="RdYlGn", vmin=0, vmax=1, s=2)
     ax.set_xlabel("lateral (m, right of vehicle +)", color="w"); ax.set_ylabel("forward (m)", color="w")
+    for l in gt or []:
+        p = np.asarray(l)
+        ax.plot(-p[:, 1], p[:, 0], color="#4cc9f0", lw=0.8, alpha=0.8)
     ax.tick_params(colors="w"); ax.set_aspect("equal"); ax.set_title(title, color="w")
     cb = fig.colorbar(sc, ax=ax, fraction=0.04); cb.set_label("P(lane paint)", color="w")
     cb.ax.yaxis.set_tick_params(color="w"); plt.setp(cb.ax.get_yticklabels(), color="w")
@@ -140,6 +161,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--train", required=True)
     ap.add_argument("--test", default=None, help="a different drive the model never trains on")
+    ap.add_argument("--test-gt", default=None, help="hand-labelled lines for the test drive (from label_tool.py)")
     ap.add_argument("--out", default="results/ml")
     ap.add_argument("--x-range", type=float, nargs=2, default=[0.0, 60.0])
     ap.add_argument("--y-max", type=float, default=12.0)
@@ -177,10 +199,20 @@ def main():
     plot(pts, p_all, os.path.join(args.out, "train_drive_predictions.png"), "Training drive: P(lane paint)")
 
     if args.test:
-        Xt, yt, pts_t, _ = labelled(args.test, args)
-        m_t, p_t = evaluate(model, Xt, yt, "unseen_drive")
+        gt = None
+        if args.test_gt:
+            with open(args.test_gt) as f:
+                gt = json.load(f)["lines"]
+            print(f"Test labels: {len(gt)} hand-drawn lines from {args.test_gt}")
+        Xt, yt, pts_t, n_rule = labelled(args.test, args, gt)
+        name = "unseen_drive_human" if gt else "unseen_drive"
+        if gt is None and yt.sum() == 0:
+            print(f"\n[{name}] the rules found {n_rule} lane lines on the test drive, so there is no paint to score. "
+                  "Label it by hand with label_tool.py and pass --test-gt.")
+        m_t, p_t = evaluate(model, Xt, yt, name)
         metrics.update(m_t)
-        plot(pts_t, p_t, os.path.join(args.out, "unseen_drive_predictions.png"), "Unseen drive: P(lane paint)")
+        plot(pts_t, p_t, os.path.join(args.out, "unseen_drive_predictions.png"),
+             "Unseen drive: P(lane paint)" + (" | blue = hand labels" if gt else ""), gt)
 
     joblib.dump({"model": model, "features": FEATURES}, os.path.join(args.out, "paint_classifier.joblib"))
     with open(os.path.join(args.out, "metrics.json"), "w") as f:

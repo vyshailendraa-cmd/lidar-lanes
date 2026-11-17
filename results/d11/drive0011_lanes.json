@@ -1,0 +1,55 @@
+{
+  "scan": "data/drive0011.npy",
+  "points_total": 4167933,
+  "points_roi": 1854108,
+  "points_ground": 1315599,
+  "ground_plane": {
+    "normal": [
+      -0.0097,
+      -0.0253,
+      0.9996
+    ],
+    "d": 1.594
+  },
+  "candidates": 4970,
+  "marking_segments": 34,
+  "road_heading_correction_deg": -4.3,
+  "lines_rejected_by_quality_filter": 7,
+  "rails_detected": [
+    {
+      "coef": [
+        -0.0007738879399092756,
+        0.036788289890601227,
+        2.1514823677109822
+      ],
+      "x_range": [
+        23.304784774780273,
+        56.50790023803711
+      ],
+      "lateral_offset_m": 2.441976472626067,
+      "n_points": 793,
+      "n_segments": 6,
+      "paint_coverage": 0.66,
+      "type_guess": "dashed",
+      "rms_residual_m": 0.15726774317412703
+    },
+    {
+      "coef": [
+        0.08487402614821615,
+        -0.7836671375170802
+      ],
+      "x_range": [
+        46.99382781982422,
+        52.27479934692383
+      ],
+      "lateral_offset_m": 0.06507312396508136,
+      "n_points": 534,
+      "n_segments": 1,
+      "paint_coverage": 1.0,
+      "type_guess": "solid",
+      "rms_residual_m": 0.172144771097818
+    }
+  ],
+  "lanes": [],
+  "adjacent_line_spacing_m": []
+}

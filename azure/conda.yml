@@ -9,5 +9,5 @@ dependencies:
       - scikit-learn
       - matplotlib
       - joblib
-      - mlflow
+      - mlflow<3
       - azureml-mlflow

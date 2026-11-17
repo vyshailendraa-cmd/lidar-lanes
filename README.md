@@ -49,6 +49,36 @@ It uses classical geometry and no neural network, so every step can be inspected
 
 **Caveat:** simulated errors are optimistic because the simulation has perfect poses. On real data, pose drift and LiDAR–IMU calibration error dominate.
 
+## Machine learning: does it transfer to a new street?
+
+The rules above were tuned on one drive. To test whether anything generalises, `train_classifier.py` trains a
+gradient-boosted classifier (paint vs not-paint) on the bright ground points of drive 0001 and tests it on
+**drive 0011, a different street it never saw**.
+
+- **Training labels are weak:** they come from the rule pipeline (near a kept lane line = paint, far from every line = not paint).
+- **Features have physical reasons behind them:** intensity relative to the local road, height above the road plane (rail heads sit higher), surface roughness (gravel beds are rough), how line-like and road-aligned the nearby bright points are, and a rail-pair score (another bright line one track gauge away).
+- **The split is spatial:** every 4th 5 m block of road is held out, so test points never sit right next to training points.
+- **The test labels on drive 0011 are independent:** the two dashed lane lines were drawn by eye from the dash positions in the top-down view (`data/drive0011_gt.json`, check image below), not by the rules.
+
+| Test | ROC AUC | Paint precision | Paint recall | Not-paint recall |
+|---|---|---|---|---|
+| Drive 0001, held-out road (labels from the rules) | 0.997 | 0.99 | 0.90 | 1.00 |
+| **Drive 0011, unseen street (hand labels)** | **0.878** | **0.83** | **0.23** | **1.00** |
+| Rule pipeline on drive 0011 | found **0 of 2** lane lines | | | |
+
+**What this shows:**
+- The 0.997 on drive 0001 is inflated. The labels come from the rules, and the top feature (how line-like the bright points are) is close to what the rules check, so the model is partly learning to copy them. That is why the test on a second street with independent labels matters.
+- On the new street, the hand-tuned rules find nothing: it is narrower, with shorter dashes and bright pavement on both edges.
+- The classifier trained on their weak labels still transfers. It ranks paint above clutter well (AUC 0.88), but it is cautious: when it says paint it is usually right (83%), yet it catches only about a quarter of the paint. It learned what drive 0001's long, clean lines look like.
+- The threshold was **not** tuned on drive 0011, because that would leak the test set into the model. The real fix is training on more than one street.
+
+![Drive 0011 hand labels](results/d11/drive0011_gt_check.png)
+
+### Azure Machine Learning
+
+The same script runs unchanged as an Azure ML command job (`azure/submit_job.py`) on a CPU cluster in Malaysia West
+that scales to zero when idle. MLflow logs the metrics and artifacts. The cloud run reproduced the local metrics exactly.
+
 ## Run
 
 ```bash
@@ -63,11 +93,20 @@ python eval_synthetic.py --pred results/sim_lanes.json --gt data/sim_gt.json
 # from cvlibs.net/datasets/kitti; extract both into kitti/)
 python accumulate.py --base kitti --date 2011_09_26 --drive 0001 --n 40 --step 2 --out data/drive0001.npy
 python lane_extract.py data/drive0001.npy --x-range 0 60
+
+# ML: train on drive 0001, test on drive 0011 against hand labels
+python accumulate.py --base kitti --date 2011_09_26 --drive 0011 --n 40 --step 2 --out data/drive0011.npy
+python label_tool.py data/drive0011.npy --out data/drive0011_gt.json      # click along the real lane lines
+python train_classifier.py --train data/drive0001.npy --test data/drive0011.npy --test-gt data/drive0011_gt.json --out results/ml
+
+# Same job on Azure Machine Learning (put your workspace config.json in azure/)
+python azure/submit_job.py --train data/drive0001.npy --test data/drive0011.npy --test-gt data/drive0011_gt.json
 ```
 
 ## Next steps
 
-- Train an ML classifier for paint vs rails (`train_classifier.py`) and run it on Azure Machine Learning.
+- Train on several streets, not one, to fix the low recall on unseen roads.
+- Hand-label more drives so every test score comes from independent labels.
 - Remove moving vehicles before stitching.
 - Score against a labelled HD map instead of simulation.
 
@@ -77,3 +116,6 @@ python lane_extract.py data/drive0001.npy --x-range 0 60
 - `lane_extract.py`: the pipeline. It writes a BEV PNG and a JSON report.
 - `simulate_scan.py`: a 64-beam LiDAR simulator with intensity falloff, noise, curves, stopped cars and poles.
 - `eval_synthetic.py`: lane recall, false positives and lateral error against ground truth.
+- `train_classifier.py`: weakly supervised paint classifier with a spatial split, an unseen-drive test and MLflow logging.
+- `label_tool.py`: click-to-label lane lines on a top-down view, producing independent test labels.
+- `azure/submit_job.py`: runs the training as an Azure Machine Learning job.

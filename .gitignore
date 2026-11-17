@@ -1,6 +1,11 @@
 .venv/
 __pycache__/
-data/
+data/*
+!data/drive0011_gt.json
+!data/sim_gt.json
 kitti/
 *.zip
 results/k*/
+azure/config.json
+results/d11/cand.npz
+azure/__pycache__/
