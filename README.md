@@ -23,15 +23,17 @@ It uses classical geometry and no neural network, so every step can be inspected
 5. **Anisotropic DBSCAN**: the x axis is compressed 4×, so paint hits on successive LiDAR rings chain into one segment. The step keeps elongated, longitudinal clusters.
 6. **Lane chaining**: each segment joins the lane whose extrapolated trajectory passes closest to it.
 7. **Fragment merging**: pieces of the same line that sit end to end and agree laterally are joined.
-8. **Quality filter**: drops lines with a fit residual above 0.15 m (kerbs, rails, gravel) or shorter than 8 m.
-9. **Fit and classify**: a polynomial y = f(x) per line. Solid vs dashed comes from paint coverage along the line.
+8. **Rail detection**: parallel pairs 1.435 m apart (or two ridges inside one wide band) are labelled as rails.
+9. **Quality filter**: drops lines with a fit residual above 0.15 m (kerbs, rails, gravel) or shorter than 8 m.
+10. **Fit and classify**: a polynomial y = f(x) per line. Solid vs dashed comes from paint coverage along the line.
 
 ## Results
 
 ### Real data (KITTI drive 0001, urban road beside tram tracks)
 
 - Recovers the **dashed centre line** (about 51 m long, 4.8 cm fit residual) and a **solid line** 3.05 m away (8.6 cm residual), which is a typical urban lane width.
-- **Failure mode found:** tram rails and gravel reflect as brightly as paint, so the intensity step marks them as candidates. Before the quality filter they produced many short, noisy false lines. The residual filter removes most of them, but intensity alone can't separate rails from paint. That needs geometry priors (rail spacing, parallel pairs) or a learned classifier.
+- **Failure mode found and fixed:** tram rails reflect as brightly as paint, so the first version reported 12 "lanes". A residual-based quality filter removes noisy kerb and gravel lines, and a geometry prior identifies rails: parallel pairs one track gauge (1.435 m) apart. On drive 0001 it found a **double tram track: two rail pairs measured 1.42 m and 1.46 m apart**, now labelled as rails instead of lanes.
+- **Road alignment:** the map is rotated to the road heading measured from the paint near the vehicle (correction on drive 0001: -0.55 deg; the remaining lean in the plot is the road genuinely curving).
 - Tuning: `--k-mad 2.5`. A stricter threshold (3.0) fragmented real lines; a looser one (2.0) let in kerbs and pavement.
 
 ### Simulation (64-beam LiDAR, 3-lane road, known geometry)
@@ -65,8 +67,7 @@ python lane_extract.py data/drive0001.npy --x-range 0 60
 
 ## Next steps
 
-- Align the map to the road heading before fitting, so lanes run straight up the plot.
-- Reject rail pairs using their fixed gauge (~1.435 m apart, always paired).
+- Train an ML classifier for paint vs rails (`train_classifier.py`) and run it on Azure Machine Learning.
 - Remove moving vehicles before stitching.
 - Score against a labelled HD map instead of simulation.
 
