@@ -1,0 +1,52 @@
+"""Submit train_classifier.py as an Azure Machine Learning command job.
+
+One-time setup:
+  pip install azure-ai-ml azure-identity
+  az login
+  Download config.json from your workspace (Azure ML studio > top-right workspace menu)
+  and put it in this azure/ folder.
+
+Run (from the repo root):
+  python azure/submit_job.py --train data/drive0001.npy --test data/drive0011.npy
+
+The job runs on serverless compute; metrics, the model and plots appear under
+Jobs > lidar-lanes-classifier in Azure ML studio (MLflow is captured automatically).
+"""
+import argparse
+import os
+
+from azure.ai.ml import Input, MLClient, command
+from azure.ai.ml.entities import Environment
+from azure.identity import DefaultAzureCredential
+
+ap = argparse.ArgumentParser()
+ap.add_argument("--train", required=True)
+ap.add_argument("--test", default=None)
+args = ap.parse_args()
+
+here = os.path.dirname(os.path.abspath(__file__))
+ml = MLClient.from_config(credential=DefaultAzureCredential(), path=os.path.join(here, "config.json"))
+
+env = Environment(
+    name="lidar-lanes-env",
+    image="mcr.microsoft.com/azureml/openmpi4.1.0-ubuntu22.04:latest",
+    conda_file=os.path.join(here, "conda.yml"),
+)
+
+inputs = {"train": Input(type="uri_file", path=args.train)}
+cmd = "python train_classifier.py --train ${{inputs.train}} --out outputs/ml"
+if args.test:
+    inputs["test"] = Input(type="uri_file", path=args.test)
+    cmd = "python train_classifier.py --train ${{inputs.train}} --test ${{inputs.test}} --out outputs/ml"
+
+job = command(
+    code=os.path.dirname(here),            # repo root: uploads the .py files (data/ and kitti/ are in .amlignore)
+    command=cmd,
+    inputs=inputs,
+    environment=env,
+    display_name="paint-vs-rail-classifier",
+    experiment_name="lidar-lanes-classifier",
+)
+returned = ml.jobs.create_or_update(job)
+print("Submitted:", returned.name)
+print("Watch it here:", returned.studio_url)

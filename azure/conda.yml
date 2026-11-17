@@ -1,0 +1,13 @@
+name: lidar-lanes
+channels: [conda-forge]
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - numpy
+      - scipy
+      - scikit-learn
+      - matplotlib
+      - joblib
+      - mlflow
+      - azureml-mlflow

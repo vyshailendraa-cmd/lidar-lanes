@@ -29,7 +29,7 @@ def road_y(x, offset, curve):
     return offset + curve * x ** 2
 
 
-def scan(ego_x, lines, rng, n_beams=64, n_az=2000):
+def scan(ego_x, lines, rng, n_beams=64, n_az=2000, rails=False):
     pts = []
     elev = np.radians(np.linspace(-24.8, 2.0, n_beams))
     az = np.linspace(-np.pi, np.pi, n_az, endpoint=False)
@@ -57,8 +57,21 @@ def scan(ego_x, lines, rng, n_beams=64, n_az=2000):
     z[off] += rng.normal(0.1, 0.08, off.sum())
     pts.append(np.c_[x, y, z, np.clip(inten, 0, 1)])
 
-    # Stopped cars (world-fixed, centred in lanes) and roadside poles: non-ground clutter
     curve = lines[0]["curve"]
+    if rails:
+        # Tram track beside the road: two bright steel rails 1.435 m apart on a rough gravel bed.
+        # Rails are as reflective as paint, which is exactly what fools intensity-only rules.
+        centre = -(2 * LANE_W + 2.5)
+        bed = np.abs(y - road_y(x + ego_x, centre, curve)) < 1.3
+        z[bed] = -SENSOR_H + np.abs(rng.normal(0.03, 0.03, bed.sum()))  # gravel bed: slightly rough
+        inten[bed] = np.clip(0.25 + 0.15 * rng.random(bed.sum()), 0, 1) * np.exp(-r[bed] / 45)
+        for off in (-0.7175, 0.7175):
+            on = np.abs(y - road_y(x + ego_x, centre + off, curve)) < 0.06
+            z[on] += 0.05                                            # rail head sits just above the bed
+            inten[on] = 0.8 * np.cos(inc[on] * 0.6) * np.exp(-r[on] / 45) + rng.normal(0, 0.015, on.sum())
+        pts[0] = np.c_[x, y, z, np.clip(inten, 0, 1)]
+
+    # Stopped cars (world-fixed, centred in lanes) and roadside poles: non-ground clutter
     for wx, lane_y in [(14, LANE_W), (30, -LANE_W), (48, 0.0)]:
         cx, cy = wx - ego_x, road_y(wx, lane_y, curve)
         if not (-5 < cx < 60):
@@ -82,13 +95,14 @@ def main():
     ap.add_argument("--accumulate", type=int, default=1, help="number of scans to stitch (ego moves 1 m/scan)")
     ap.add_argument("--curve", type=float, default=0.002)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--rails", action="store_true", help="add a tram track beside the road")
     args = ap.parse_args()
 
     rng = np.random.default_rng(args.seed)
     lines = lane_lines(args.curve)
     chunks = []
     for k in range(args.accumulate):
-        s = scan(float(k), lines, rng)
+        s = scan(float(k), lines, rng, rails=args.rails)
         s[:, 0] += k                 # ego moved k metres; express in first-scan frame
         chunks.append(s)
     pts = np.vstack(chunks).astype(np.float32)

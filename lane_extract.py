@@ -84,7 +84,7 @@ def under_structure(ground, nonground, n, d, radius=0.4, min_h=0.3):
     return np.isfinite(dist)
 
 
-def cluster_markings(xy, eps=0.3, min_samples=4, min_len=0.8, min_elong=2.5, x_stretch=4.0):
+def cluster_markings(xy, eps=0.3, min_samples=4, min_len=0.8, min_elong=2.5, x_stretch=4.0, max_heading=25.0):
     """Anisotropic DBSCAN (x compressed by x_stretch, so gaps between LiDAR rings
     along the road still chain together), then keep elongated, longitudinal clusters."""
     if len(xy) < min_samples:
@@ -99,7 +99,7 @@ def cluster_markings(xy, eps=0.3, min_samples=4, min_len=0.8, min_elong=2.5, x_s
         length = np.ptp(c @ major)
         elong = np.sqrt(evals[1] / max(evals[0], 1e-9))
         heading = np.degrees(np.arctan2(abs(major[1]), abs(major[0])))  # 0 = along driving direction
-        if length >= min_len and elong >= min_elong and heading < 25:
+        if length >= min_len and elong >= min_elong and heading < max_heading:
             segs.append(p)
     return segs
 
@@ -195,7 +195,92 @@ def merge_fragments(lanes, lat_tol=0.35, max_overlap=3.0, max_gap=15.0):
 
 
 # ---------- Render ----------
-def render_bev(roi, ground_mask, cand_mask, lanes, out_png, title):
+def rotate_xy(pts, angle_rad):
+    """Rotate points about the vertical axis (x forward, y left)."""
+    c, s_ = np.cos(angle_rad), np.sin(angle_rad)
+    out = pts.copy()
+    out[:, 0] = c * pts[:, 0] - s_ * pts[:, 1]
+    out[:, 1] = s_ * pts[:, 0] + c * pts[:, 1]
+    return out
+
+
+def estimate_heading(pts, x_range, y_max, k_mad):
+    """Road direction from the lane paint itself: length-weighted median angle of the
+    marking segments. The vehicle is rarely perfectly aligned with the road, so a map
+    built in the first scan's frame comes out tilted by this angle."""
+    roi = pts[(pts[:, 0] > x_range[0]) & (pts[:, 0] < x_range[1]) & (np.abs(pts[:, 1]) < y_max)]
+    n, d = fit_ground(roi)
+    gmask = np.abs(roi[:, :3] @ n + d) < 0.15
+    ground = roi[gmask]
+    cmask = lane_candidates(ground, k_mad=k_mad) & ~under_structure(ground, roi[~gmask], n, d)
+    angles, weights = [], []
+    for p in cluster_markings(ground[cmask][:, :2], max_heading=45):
+        q = p[p[:, 0] < x_range[0] + 15]             # tangent where the car is, not mid-curve
+        if len(q) < 5 or np.ptp(q[:, 0]) < 1.0:
+            continue
+        c = q - q.mean(0)
+        _, evecs = np.linalg.eigh(np.cov(c.T) + 1e-9 * np.eye(2))
+        major = evecs[:, 1] * np.sign(evecs[0, 1] or 1)          # point it forward (+x)
+        angles.append(np.arctan2(major[1], major[0]))
+        weights.append(np.ptp(c @ evecs[:, 1]))
+    if not angles:
+        return 0.0
+    order = np.argsort(angles)
+    cum = np.cumsum(np.asarray(weights)[order])
+    return float(np.asarray(angles)[order][np.searchsorted(cum, cum[-1] / 2)])
+
+
+def _two_ridges(resid, gauge, tol, bin_m=0.04):
+    """Look for two dense ridges one track gauge apart in a line's lateral residuals."""
+    edges = np.arange(-2.0, 2.0 + bin_m, bin_m)
+    h, _ = np.histogram(resid, edges)
+    h = np.convolve(h, [1, 2, 1], mode="same")
+    centres = (edges[:-1] + edges[1:]) / 2
+    floor = 1.5 * max(np.median(h[h > 0]) if (h > 0).any() else 1, 1)
+    peaks = [i for i in range(1, len(h) - 1) if h[i] >= h[i - 1] and h[i] >= h[i + 1] and h[i] > floor]
+    best = None
+    for a in peaks:
+        for b in peaks:
+            sep = centres[b] - centres[a]
+            if sep > 0 and abs(sep - gauge) < tol:
+                score = h[a] + h[b]
+                if best is None or score > best[0]:
+                    best = (score, centres[a], centres[b])
+    return None if best is None else best[1:]
+
+
+def find_rails(lines, gauge=1.435, tol=0.12, max_wobble=0.2, min_overlap=5.0):
+    """Rails come as two parallel bright ridges exactly one track gauge apart; lane lines don't.
+    Catches both cases: two separate lines one gauge apart, and one wide, messy line
+    (rails + the gravel between them merged together) with two ridges inside it.
+    Returns (rail_lines, indices of input lines that were rails)."""
+    rails, used = [], set()
+    for i, l in enumerate(lines):
+        p = l["points"]
+        resid = p[:, 1] - np.polyval(l["coef"], p[:, 0])
+        ridges = _two_ridges(resid, gauge, tol)
+        if ridges is not None and np.std(resid) > 0.3:
+            used.add(i)
+            for off in ridges:
+                coef = list(l["coef"]); coef[-1] += off
+                rails.append({"coef": coef, "x_range": l["x_range"],
+                              "lateral_offset_m": float(np.polyval(coef, 10.0)), "points": p[:0]})
+    for i in range(len(lines)):
+        for j in range(i + 1, len(lines)):
+            if i in used or j in used:
+                continue
+            a, b = lines[i], lines[j]
+            x0 = max(a["x_range"][0], b["x_range"][0]); x1 = min(a["x_range"][1], b["x_range"][1])
+            if x1 - x0 < min_overlap:
+                continue
+            xs = np.linspace(x0, x1, 30)
+            gap = np.abs(np.polyval(a["coef"], xs) - np.polyval(b["coef"], xs))
+            if abs(gap.mean() - gauge) < tol and gap.std() < max_wobble:
+                used.update((i, j)); rails += [a, b]
+    return rails, sorted(used)
+
+
+def render_bev(roi, ground_mask, cand_mask, lanes, out_png, title, rails=()):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -207,6 +292,10 @@ def render_bev(roi, ground_mask, cand_mask, lanes, out_png, title):
     ax.scatter(-g[:, 1], g[:, 0], s=0.5, c=g[:, 3], cmap="Blues_r", vmin=0, vmax=0.6)
     c = g[cand_mask]
     ax.scatter(-c[:, 1], c[:, 0], s=3, c="#ffd166", label="high-intensity ground")
+    for k, rl in enumerate(rails):
+        xs = np.linspace(*rl["x_range"], 100)
+        ax.plot(-np.polyval(rl["coef"], xs), xs, lw=3.5, c="#ffffff", ls="--", zorder=5,
+                label="rails detected" if k == 0 else None)
     colors = ["#ef476f", "#06d6a0", "#118ab2", "#f78c6b", "#c77dff", "#90be6d"]
     for i, ln in enumerate(lanes):
         xs = np.linspace(*ln["x_range"], 100)
@@ -233,9 +322,15 @@ def main():
     ap.add_argument("--max-rms", type=float, default=0.15,
                     help="drop lines whose points scatter more than this (m) around the fit: kerbs, rails, gravel")
     ap.add_argument("--min-length", type=float, default=8.0, help="drop lines shorter than this (m)")
+    ap.add_argument("--no-align", action="store_true", help="skip rotating the map to the road heading")
     args = ap.parse_args()
 
     pts = load_points(args.scan)
+    heading = 0.0
+    if not args.no_align:
+        heading = estimate_heading(pts, args.x_range, args.y_max, args.k_mad)
+        if abs(np.degrees(heading)) > 0.5:
+            pts = rotate_xy(pts, -heading)          # road now runs along +x
     roi = pts[(pts[:, 0] > args.x_range[0]) & (pts[:, 0] < args.x_range[1]) & (np.abs(pts[:, 1]) < args.y_max)]
     n, d = fit_ground(roi)
     gmask = np.abs(roi[:, :3] @ n + d) < 0.15
@@ -244,10 +339,13 @@ def main():
     cmask &= ~under_structure(ground, roi[~gmask], n, d)
     segs = cluster_markings(ground[cmask][:, :2])
     raw = merge_fragments(group_into_lanes(segs))
-    lanes = [l for l in raw if l["rms_residual_m"] <= args.max_rms
+    rails, rail_idx = find_rails(raw)
+    rail_idx = set(rail_idx)
+    lanes = [l for i, l in enumerate(raw) if i not in rail_idx
+             and l["rms_residual_m"] <= args.max_rms
              and l["x_range"][1] - l["x_range"][0] >= args.min_length]
     lanes.sort(key=lambda l: l["lateral_offset_m"])
-    rejected = len(raw) - len(lanes)
+    rejected = len(raw) - len(lanes) - len(rail_idx)
 
     os.makedirs(args.out, exist_ok=True)
     name = os.path.splitext(os.path.basename(args.scan))[0]
@@ -257,17 +355,20 @@ def main():
         "points_total": int(len(pts)), "points_roi": int(len(roi)), "points_ground": int(len(ground)),
         "ground_plane": {"normal": n.round(4).tolist(), "d": round(float(d), 3)},
         "candidates": int(cmask.sum()), "marking_segments": len(segs),
+        "road_heading_correction_deg": round(float(np.degrees(heading)), 2),
         "lines_rejected_by_quality_filter": rejected,
+        "rails_detected": [{k: v for k, v in r.items() if k != "points"} for r in rails],
         "lanes": [{k: v for k, v in l.items() if k != "points"} for l in lanes],
         "adjacent_line_spacing_m": spacings,   # sanity check: ~3.0–3.75 m for real lanes
     }
     with open(os.path.join(args.out, f"{name}_lanes.json"), "w") as f:
         json.dump(report, f, indent=2)
     render_bev(roi, gmask, cmask, lanes, os.path.join(args.out, f"{name}_bev.png"),
-               f"{name}: {len(lanes)} lane lines")
+               f"{name}: {len(lanes)} lane lines" + (f", {len(rails)} rails" if rails else ""), rails=rails)
 
     print(f"ROI {len(roi)} pts | ground {len(ground)} | candidates {cmask.sum()} | segments {len(segs)} "
-          f"| lines kept {len(lanes)}, rejected {rejected} (rms > {args.max_rms} m or < {args.min_length} m long)")
+          f"| lines kept {len(lanes)}, rails {len(rails)}, rejected {rejected} (rms > {args.max_rms} m or < {args.min_length} m long)")
+    print(f"  road heading correction: {np.degrees(heading):+.2f} deg")
     for i, l in enumerate(lanes):
         print(f"  lane {i}: offset {l['lateral_offset_m']:+.2f} m, x {l['x_range'][0]:.0f}-{l['x_range'][1]:.0f} m, "
               f"{l['type_guess']}, rms {l['rms_residual_m']:.3f} m")

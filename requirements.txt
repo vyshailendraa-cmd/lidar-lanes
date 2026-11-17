@@ -4,3 +4,7 @@ scikit-learn
 matplotlib
 pykitti
 opencv-python-headless
+
+# Azure ML job submission (optional)
+# azure-ai-ml
+# azure-identity
